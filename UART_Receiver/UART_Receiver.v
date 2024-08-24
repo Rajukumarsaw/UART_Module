@@ -1,33 +1,40 @@
-module UART_RX (
-    input wire clk,        // System clock
-    input wire reset,      // Reset signal
-    input wire rx_serial,  // Serial input
-    input wire baud_rate_clk, // Baud rate clock
-    output reg [7:0] data_out, // 8-bit data output
-    output reg rx_done     // Reception complete flag
+module UART_TX #(
+    parameter DATA_WIDTH = 8,
+    parameter STOP_BITS = 1
+)(
+    input wire clk,
+    input wire reset,
+    input wire tx_start,
+    input wire [DATA_WIDTH-1:0] data_in,
+    input wire baud_rate_clk,
+    output reg tx_serial,
+    output reg tx_done
 );
 
-reg [3:0] bit_index;       // Tracks the current bit
-reg [9:0] shift_reg;       // Shift register for data + start/stop bits
-reg rx_busy;               // Busy flag
+reg [3:0] bit_index;
+reg [DATA_WIDTH+STOP_BITS:0] shift_reg;
+reg tx_busy;
 
 always @(posedge clk or posedge reset) begin
     if (reset) begin
+        tx_serial <= 1'b1;
+        tx_done <= 1'b0;
+        tx_busy <= 1'b0;
         bit_index <= 0;
-        rx_done <= 1'b0;
-        rx_busy <= 1'b0;
-    end else if (!rx_busy && !rx_serial) begin
-        rx_busy <= 1'b1;   // Start bit detected
+    end else if (tx_start && !tx_busy) begin
+        shift_reg <= {{{STOP_BITS{1'b1}}, data_in, 1'b0}}; // Start bit + data + stop bit(s)
+        tx_busy <= 1'b1;
         bit_index <= 0;
-        rx_done <= 1'b0;
-    end else if (rx_busy && baud_rate_clk) begin
-        shift_reg <= {rx_serial, shift_reg[9:1]};
+        tx_done <= 1'b0;
+    end else if (tx_busy && baud_rate_clk) begin
+        tx_serial <= shift_reg[0];
+        shift_reg <= shift_reg >> 1;
         bit_index <= bit_index + 1;
-        if (bit_index == 9) begin
-            rx_busy <= 1'b0;
-            data_out <= shift_reg[8:1]; // Extract data bits
-            rx_done <= 1'b1;
+        if (bit_index == DATA_WIDTH + STOP_BITS) begin
+            tx_busy <= 1'b0;
+            tx_done <= 1'b1;
         end
     end
 end
+
 endmodule
